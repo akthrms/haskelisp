@@ -1,6 +1,7 @@
-module MyLib where
+module LispParser (runRepl, evalAndPoint) where
 
 import Control.Monad.Except
+import System.IO (hFlush, stdout)
 import Text.ParserCombinators.Parsec hiding (spaces)
 
 -- Types
@@ -32,7 +33,6 @@ data LispError
   | BadSpecialForm String LispValue
   | NotFunction String String
   | UnboundVar String String
-  | Default String
 
 instance Show LispError where
   show (NumArgs expected found) = "Expected " ++ show expected ++ " args; found values " ++ unwordsList found
@@ -142,10 +142,7 @@ unpackNum (String n) =
 unpackNum (List [n]) = unpackNum n
 unpackNum notNum = throwError $ TypeMismatch "number" notNum
 
--- Run
-
-run :: String -> String
-run input = extractValue . trapError . fmap show $ readExpr input >>= eval
+-- IO
 
 readExpr :: String -> ThrowsError LispValue
 readExpr input = case parse parseExpr "lisp" input of
@@ -157,3 +154,25 @@ trapError action = action `catchError` (pure . show)
 
 extractValue :: ThrowsError a -> a
 extractValue (Right val) = val
+
+flushString :: String -> IO ()
+flushString s = putStr s >> hFlush stdout
+
+readPrompt :: String -> IO String
+readPrompt prompt = flushString prompt >> getLine
+
+evalString :: String -> IO String
+evalString expr = pure $ extractValue . trapError . fmap show $ readExpr expr >>= eval
+
+evalAndPoint :: String -> IO ()
+evalAndPoint expr = evalString expr >>= putStrLn
+
+until_ :: Monad m => (a -> Bool) -> m a -> (a -> m ()) -> m ()
+until_ pred prompt action = do
+  result <- prompt
+  if pred result
+    then pure ()
+    else action result >> until_ pred prompt action
+
+runRepl :: IO ()
+runRepl = until_ (== "quit") (readPrompt "Lisp>>>") evalAndPoint
