@@ -162,7 +162,7 @@ readPrompt :: String -> IO String
 readPrompt prompt = flushString prompt >> getLine
 
 evalString :: String -> IO String
-evalString expr = pure $ extractValue . trapError . fmap show $ readExpr expr >>= eval
+evalString expr = pure $ extractValue $ trapError $ fmap show $ eval =<< readExpr expr
 
 evalAndPoint :: String -> IO ()
 evalAndPoint expr = evalString expr >>= putStrLn
