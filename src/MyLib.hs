@@ -118,18 +118,18 @@ apply fun args =
 
 primitives :: [(String, [LispValue] -> ThrowsError LispValue)]
 primitives =
-  [ ("+", numericBinOperation (+)),
-    ("-", numericBinOperation (-)),
-    ("*", numericBinOperation (*)),
-    ("/", numericBinOperation div),
-    ("mod", numericBinOperation mod),
-    ("quotient", numericBinOperation quot),
-    ("remainder", numericBinOperation rem)
+  [ ("+", numBinOperation (+)),
+    ("-", numBinOperation (-)),
+    ("*", numBinOperation (*)),
+    ("/", numBinOperation div),
+    ("mod", numBinOperation mod),
+    ("quotient", numBinOperation quot),
+    ("remainder", numBinOperation rem)
   ]
 
-numericBinOperation :: (Integer -> Integer -> Integer) -> [LispValue] -> ThrowsError LispValue
-numericBinOperation operation param@[_] = throwError $ NumArgs 2 param
-numericBinOperation operation params = Number . foldl1 operation <$> mapM unpackNum params
+numBinOperation :: (Integer -> Integer -> Integer) -> [LispValue] -> ThrowsError LispValue
+numBinOperation operation param@[_] = throwError $ NumArgs 2 param
+numBinOperation operation params = Number . foldl1 operation <$> mapM unpackNum params
 
 unpackNum :: LispValue -> ThrowsError Integer
 unpackNum (Number n) = pure n
