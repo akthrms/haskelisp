@@ -30,7 +30,8 @@ instance Show LispValue where
   show (Bool False) = "#f"
   show (PrimitiveFunction _) = "<primitive>"
   show Function {params = args, varArg = varArg} =
-    "(lambda (" ++ unwords (map show args)
+    "(lambda ("
+      ++ unwords (map show args)
       ++ ( case varArg of
              Nothing -> ""
              Just arg -> " . " ++ arg
@@ -150,12 +151,12 @@ apply (PrimitiveFunction fun) args = liftThrows $ fun args
 apply (Function params varArg body closure) args =
   if num params /= num args && isNothing varArg
     then throwError $ NumArgs (num params) args
-    else liftIO (bindVars closure $ zip params args) >>= bindVarArgs varArg >>= evalBody
+    else liftIO (bindVars closure $ zip params args) >>= bindVarArg varArg >>= evalBody
   where
     remainingArgs = drop (length params) args
     num = toInteger . length
     evalBody env = last <$> mapM (eval env) body
-    bindVarArgs arg env = case arg of
+    bindVarArg arg env = case arg of
       Just argName -> liftIO $ bindVars env [(argName, List remainingArgs)]
       Nothing -> pure env
 
