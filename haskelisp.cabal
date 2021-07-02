@@ -23,7 +23,7 @@ extra-source-files: CHANGELOG.md
 
 library
   -- cabal-fmt: expand src
-  exposed-modules:  LispParser
+  exposed-modules:  LispInterpreter
 
   -- Modules included in this library but not exported.
   -- other-modules:

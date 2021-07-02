@@ -1,6 +1,6 @@
 module Main where
 
-import LispParser (runOne, runRepl)
+import LispInterpreter (runOne, runRepl)
 import System.Environment (getArgs)
 
 main :: IO ()

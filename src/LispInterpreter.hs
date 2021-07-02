@@ -1,6 +1,6 @@
 {-# LANGUAGE ExistentialQuantification #-}
 
-module LispParser (runRepl, runOne) where
+module LispInterpreter (runRepl, runOne) where
 
 import Control.Monad.Except
 import Data.IORef
