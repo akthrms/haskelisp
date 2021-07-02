@@ -1,8 +1,10 @@
 {-# LANGUAGE ExistentialQuantification #-}
 
-module LispParser (runRepl, evalAndPoint) where
+module LispParser (runRepl, runOne) where
 
 import Control.Monad.Except
+import Data.IORef
+import Data.Maybe (isJust)
 import System.IO (hFlush, stdout)
 import Text.ParserCombinators.Parsec hiding (spaces)
 
@@ -47,6 +49,10 @@ instance Show LispError where
 type ThrowsError = Either LispError
 
 data Unpacker = forall a. Eq a => AnyUnpacker (LispValue -> ThrowsError a)
+
+type Env = IORef [(String, IORef LispValue)]
+
+type IOThrowsError = ExceptT LispError IO
 
 -- Parsers
 
@@ -105,18 +111,21 @@ parseQuoted = do
 
 -- Evals
 
-eval :: LispValue -> ThrowsError LispValue
-eval val@(String _) = pure val
-eval val@(Number _) = pure val
-eval val@(Bool _) = pure val
-eval (List [Atom "quote", val]) = pure val
-eval (List [Atom "if", pred, thenVal, elseVal]) = do
-  result <- eval pred
+eval :: Env -> LispValue -> IOThrowsError LispValue
+eval _ val@(String _) = pure val
+eval _ val@(Number _) = pure val
+eval _ val@(Bool _) = pure val
+eval env (Atom id) = getVar env id
+eval _ (List [Atom "quote", val]) = pure val
+eval env (List [Atom "if", pred, thenVal, elseVal]) = do
+  result <- eval env pred
   case result of
-    Bool False -> eval elseVal
-    _ -> eval thenVal
-eval (List (Atom fun : args)) = mapM eval args >>= apply fun
-eval badForm = throwError $ BadSpecialForm "Unrecognized special form" badForm
+    Bool False -> eval env elseVal
+    _ -> eval env thenVal
+eval env (List [Atom "set!", Atom var, form]) = eval env form >>= setVar env var
+eval env (List [Atom "define", Atom var, form]) = eval env form >>= defineVar env var
+eval env (List (Atom fun : args)) = mapM (eval env) args >>= liftThrows . apply fun
+eval _ badForm = throwError $ BadSpecialForm "Unrecognized special form" badForm
 
 apply :: String -> [LispValue] -> ThrowsError LispValue
 apply fun args =
@@ -246,6 +255,58 @@ equal [arg1, arg2] = do
   pure $ Bool $ primitiveEquals || let (Bool x) = eqvEquals in x
 equal badArgs = throwError $ NumArgs 2 badArgs
 
+-- Env
+
+nullEnv :: IO Env
+nullEnv = newIORef []
+
+liftThrows :: ThrowsError a -> IOThrowsError a
+liftThrows (Left err) = throwError err
+liftThrows (Right val) = pure val
+
+runIOThrows :: IOThrowsError String -> IO String
+runIOThrows action = extractValue <$> runExceptT (trapError action)
+
+isBound :: Env -> String -> IO Bool
+isBound envRef var = isJust . lookup var <$> readIORef envRef
+
+getVar :: Env -> String -> IOThrowsError LispValue
+getVar envRef var = do
+  env <- liftIO $ readIORef envRef
+  maybe
+    (throwError $ UnboundVar "Getting an unbound variable: " var)
+    (liftIO . readIORef)
+    (lookup var env)
+
+setVar :: Env -> String -> LispValue -> IOThrowsError LispValue
+setVar envRef var value = do
+  env <- liftIO $ readIORef envRef
+  maybe
+    (throwError $ UnboundVar "Setting an unbound variable: " var)
+    (liftIO . (`writeIORef` value))
+    (lookup var env)
+  pure value
+
+defineVar :: Env -> String -> LispValue -> IOThrowsError LispValue
+defineVar envRef var value = do
+  defined <- liftIO $ isBound envRef var
+  if defined
+    then setVar envRef var value >> pure value
+    else liftIO $ do
+      valueRef <- newIORef value
+      env <- readIORef envRef
+      writeIORef envRef ((var, valueRef) : env)
+      pure value
+
+bindVars :: Env -> [(String, LispValue)] -> IO Env
+bindVars envRef bindings =
+  readIORef envRef >>= extendEnv bindings >>= newIORef
+  where
+    extendEnv bindings env = (++ env) <$> mapM addBinding bindings
+    addBinding (var, value) = do
+      ref <- newIORef value
+      pure (var, ref)
+
 -- IO
 
 readExpr :: String -> ThrowsError LispValue
@@ -265,11 +326,11 @@ flushString s = putStr s >> hFlush stdout
 readPrompt :: String -> IO String
 readPrompt prompt = flushString prompt >> getLine
 
-evalString :: String -> IO String
-evalString expr = pure $ extractValue $ trapError $ fmap show $ eval =<< readExpr expr
+evalString :: Env -> String -> IO String
+evalString env expr = runIOThrows $ show <$> (liftThrows (readExpr expr) >>= eval env)
 
-evalAndPoint :: String -> IO ()
-evalAndPoint expr = evalString expr >>= putStrLn
+evalAndPoint :: Env -> String -> IO ()
+evalAndPoint env expr = evalString env expr >>= putStrLn
 
 until_ :: Monad m => (a -> Bool) -> m a -> (a -> m ()) -> m ()
 until_ pred prompt action = do
@@ -278,5 +339,8 @@ until_ pred prompt action = do
     then pure ()
     else action result >> until_ pred prompt action
 
+runOne :: String -> IO ()
+runOne expr = nullEnv >>= (`evalAndPoint` expr)
+
 runRepl :: IO ()
-runRepl = until_ (== "quit") (readPrompt "Lisp>>>") evalAndPoint
+runRepl = nullEnv >>= until_ (== "quit") (readPrompt "Lisp>>>") . evalAndPoint
